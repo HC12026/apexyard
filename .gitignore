@@ -15,6 +15,10 @@ onboarding.yaml
 # Claude Code per-machine settings (permission overrides, local tool config)
 .claude/settings.local.json
 
+# Local dev-server preview config (machine-specific paths/ports) — see
+# mcp__Claude_Preview__preview_start. Never committed.
+.claude/launch.json
+
 # Live working copies of managed projects. Each is its own git repo — they
 # must not be double-tracked from the ops repo.
 workspace/*/
