@@ -1,3 +1,15 @@
+## [v5.6.2] — 2026-09-14
+
+Patch release — 1 fix.
+
+### Fixed (fix)
+
+- (#1292) handle repo-less adapter registry entries — 08e694b
+
+### Closes
+
+- Closes #1292
+
 ## [v5.6.1] — 2026-09-14
 
 Minor release — 2 features, 1 improvement.
