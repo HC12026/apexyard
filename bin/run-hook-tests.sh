@@ -51,8 +51,9 @@ QUARANTINE=(
   ".claude/hooks/tests/test_tracker_zsh_self_location.sh :: requires zsh"
   ".claude/skills/pdf/tests/test_md_to_pdf_fallback.sh :: requires opt-in PDF end-to-end dependencies"
 
-  # TEMPORARY — remove once the v4.2.0 -> v5.6.2 catch-up PR (HC12026/apexyard#4)
-  # has merged. The suite's #1182 "selection parity" case reads the PREVIOUS
+  # TEMPORARY — tracked for removal by HC12026/apexyard#5, to be actioned in the
+  # first PR after the v4.2.0 -> v5.6.2 catch-up sync (#4) merges.
+  # The suite's #1182 "selection parity" case reads the PREVIOUS
   # version of require-migration-ticket.sh via `git show HEAD^:...` and asserts
   # the current hook selects the same raw target. On a PR, GitHub checks out a
   # merge commit whose FIRST PARENT is the base branch — here main at v4.2.0,
@@ -63,8 +64,10 @@ QUARANTINE=(
   # Self-healing: once this PR merges, main is v5.6.2 and the next PR's baseline
   # is a modern hook, so the case passes again. Not an upstream defect to fix
   # and not a regression in this fork — an artifact of catching up 13 releases
-  # in one merge. Delete this entry in the first PR after the sync lands.
-  ".claude/hooks/tests/test_require_migration_ticket.sh :: baseline hook is pre-v5 on this catch-up merge (see HC12026/apexyard#4); remove after the sync merges"
+  # in one merge. Upstream does not quarantine this file and its suite is green
+  # on v5.6.0-v5.6.2, so all 63 assertions are known to pass against a modern
+  # baseline. Delete this entry in the first PR after the sync lands (#5).
+  ".claude/hooks/tests/test_require_migration_ticket.sh :: baseline hook is pre-v5 on this catch-up merge; removal tracked by HC12026/apexyard#5"
 )
 
 is_quarantined() {

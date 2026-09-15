@@ -81,7 +81,9 @@ workspace/*
 # Local, machine-specific dev-server preview config (absolute paths; not portable).
 .claude/launch.json
 
-# Stray build caches (e.g. a .vite dir created by a workspace dev server run from the ops-fork root).
+# Installed Node dependencies. The fork tracks package manifests and lockfiles
+# for harness-adapters/{opencode,pi}, but never the installed trees themselves.
+# Unqualified on purpose: no tracked path in this repo contains node_modules.
 node_modules/
 
 # macOS Finder metadata.
