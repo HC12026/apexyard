@@ -7,6 +7,10 @@ allowed-tools: Bash, Read, Write
 
 # /release-sync — Sync main→dev after a release
 
+The sync PR body is a durable, human-facing artefact. Read
+`.claude/rules/writing-standard.md`. Use the **controlled technical writing profile**: lead with the
+outcome and next action, use plain concise prose, and remove empty sections.
+
 Every squash-merge release (`dev → main`) creates a SHA divergence: the squash commit on `main` is absent from `dev`, so `dev` still carries the un-squashed equivalents as separate commits. Repeated releases accumulate the divergence until the next `dev → main` release PR becomes a conflict-heavy nightmare (v2.0.0 suffered 99 conflicts because of this). This skill closes the loop: after each release, file a `main→dev` sync PR that makes the squash commit an ancestor of `dev`, so future release PRs only see genuinely-new commits.
 
 This skill is **framework-only** — only for the `me2resh/apexyard` framework repo. It has no meaning on managed projects, which are trunk-based and never squash-merge to a separate `main`.
@@ -179,11 +183,11 @@ See [#403](https://github.com/me2resh/apexyard/issues/403) for full root-cause a
 ## Testing
 
 1. After merging, verify: `git log upstream/dev..upstream/main --oneline` returns empty
-2. Verify: `git log upstream/main..upstream/dev --oneline` shows only commits newer than <version>
+2. Verify ancestry, not `main..dev`'s size: `git merge-base --is-ancestor <release-squash-sha> upstream/dev` exits 0. (#1002 — `git log upstream/main..upstream/dev --oneline` does **not** shrink to "only commits newer than \<version\>"; under the release-cut squash model no individual `dev` commit is ever reachable from `main`, so that range accumulates every past release's un-squashed history and stays large — currently ~400 commits — even on a perfectly-synced repo. The merge-base check is the assertion that actually proves the sync worked.)
 3. Verify CHANGELOG is in sync: `diff <(git show upstream/main:CHANGELOG.md) <(git show upstream/dev:CHANGELOG.md)` returns empty (apexyard#448)
 4. Open a test release PR from dev → main — confirm only new work appears in the diff and the next `/release` v<next-version> prepends cleanly on top of <version>
 
-Refs #403, #448
+Refs #403, #448, #1002
 
 ---
 

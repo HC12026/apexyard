@@ -7,6 +7,9 @@ allowed-tools: Bash, Read, Write
 
 # /investigation — Create an Investigation Ticket + Live-Doc
 
+Read `.claude/rules/writing-standard.md`. Use the **controlled technical writing profile** for the
+ticket and live document: state the outcome and next action first, then evidence.
+
 Creates a structured GitHub Issue + a sibling live-doc markdown file for an **investigation** — sustained root-cause work whose deliverable is a *written artefact* of what was observed, what we concluded, and what's next. Distinct from `/spike` (forward-looking hypothesis with a budget) and `/bug` (immediate-fix) — see the comparison block at the top of `templates/tickets/investigation.md`.
 
 > **When to use an investigation vs a bug vs a spike.** A `/bug` is filed when you already know what's broken and need to coordinate the fix. A `/spike` is filed when you want to test a forward-looking hypothesis ("will this approach work?") inside a time budget. An `/investigation` is filed when the *question itself* is the unknown — "why did this happen?", "what's actually going on with the metric drift?", "how does competitor X handle this?". The investigation produces a written record; the bug fix that may follow is a downstream artefact.
@@ -232,31 +235,59 @@ livedoc_path="$livedoc_dir/${date_prefix}-${slug}.md"
 
 Substitute the gathered values into the resolved template and write the file via the `Write` tool. The Metadata block at the bottom of the file references the GitHub issue number — leave it as `#{NNN}` until step 8, then patch it.
 
-### 8. Create the GitHub Issue
+### 8. Create the issue (via the tracker abstraction)
+
+Dispatch creation through `tracker_create` (#670 / AgDR-0072, extended by
+the #709 creator sweep) so the investigation lands in **this project's** tracker —
+GitHub, GitLab, or a `custom` CLI — per its `tracker:` block in
+`apexyard.projects.yaml`. For a GitHub adopter this runs `gh issue create`
+exactly as before.
 
 ```bash
-gh issue create --repo {owner/repo} \
-  --title "[Investigation] {slug}" \
-  --label "investigation" \
-  --body "{rendered template body, with the Metadata block pointing at the live-doc path}"
+# Resolve the tracker lib (it lives in the ops fork's hooks dir) by walking up
+# from the cwd; source it.
+tracker_lib="$(r="$PWD"; while [ -n "$r" ] && [ "$r" != / ]; do \
+  [ -f "$r/.claude/hooks/_lib-tracker.sh" ] && { echo "$r/.claude/hooks/_lib-tracker.sh"; break; }; \
+  r="${r%/*}"; done)"
+# shellcheck source=/dev/null
+. "$tracker_lib"
+
+# Ensure the `investigation` trigger label exists on the target tracker.
+# Best-effort (tracker_label_ensure always exits 0).
+tracker_label_ensure "{owner/repo}" "investigation" "5319E7" "Sustained root-cause work — closes when Follow-up actions land, not on PR merge"
+
+# Pass the body via a file (arbitrary markdown — never inline-interpolated).
+body_file="$(mktemp)"
+cat > "$body_file" <<'BODY'
+{rendered template body, with the Metadata block pointing at the live-doc path}
+BODY
+
+# tracker_create <owner/repo> <title> <body_file> [<labels_csv>] → {"ref","url"}.
+result="$(tracker_create "{owner/repo}" "[Investigation] {slug}" "$body_file" "investigation")"
+rc=$?
+rm -f "$body_file"
+if [ "$rc" -eq 3 ]; then
+  echo "Tracker is 'none' (shape-only) — nothing was created in a tracker." >&2
+  echo "File this in your external system (e.g. Jira/Linear via MCP):" >&2
+  printf '%s\n' "$result"
+  exit 0
+elif [ "$rc" -ne 0 ] || [ -z "$result" ]; then
+  echo "Investigation creation failed — check the tracker CLI / auth. Nothing was created." >&2
+  exit 1
+fi
+
+ref="$(printf '%s' "$result" | jq -r '.ref')"
+url="$(printf '%s' "$result" | jq -r '.url')"
 ```
 
-Capture the issue number from the URL `gh` returns; patch the live-doc's Metadata block to replace `#{NNN}` with the real number.
-
-If the `investigation` label doesn't exist on the target repo, create it idempotently:
-
-```bash
-gh label create investigation \
-  --color "5319E7" \
-  --description "Sustained root-cause work — closes when Follow-up actions land, not on PR merge" \
-  --repo {owner/repo} 2>/dev/null || true
-```
+Use `$ref` to patch the live-doc's Metadata block — replace the `#{NNN}`
+placeholder with the real reference.
 
 ### 9. Return paths + next steps
 
 ```
-Created: {owner/repo}#{number} — [Investigation] {slug}
-{url}
+Created: {owner/repo}#${ref} — [Investigation] {slug}
+${url}
 
 Live-doc: {livedoc_path}
 

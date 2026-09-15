@@ -7,6 +7,9 @@ allowed-tools: Bash, Read, Write
 
 # /spike — Create a Spike Ticket
 
+Read `.claude/rules/writing-standard.md`. Use the **controlled technical writing profile** for the spike
+ticket and disposition record. Keep the hypothesis and kill criteria concise.
+
 Creates a structured GitHub Issue for a **spike** — a 1-3 day hypothesis-driven exploration whose goal is to answer a technical question with minimum investment, with the explicit understanding that the code will be discarded or substantially rewritten once the answer is clear.
 
 > **When to use a spike vs a feature.** If you can answer the question through reasoning alone, file a `/feature`. If you genuinely don't know whether an approach will work — does this library scale, does this UX make sense, will this integration handle our load — file a `/spike` first. The spike's output is the answer; once it's in, file a fresh `[Feature]` ticket with production-shaped delivery (or a memo if the answer was no). See `workflows/sdlc.md` § Phase 1 for the gating heuristic.
@@ -210,26 +213,71 @@ Create this ticket? (yes / edit / cancel)
 - **edit** / **change X** → ask what to change, update, re-show
 - **cancel** / **no** → abort
 
-### 7. Create the GitHub Issue
+### 7. Create the issue (via the tracker abstraction)
+
+Dispatch creation through `tracker_create` (#670 / AgDR-0072, extended by
+the #709 creator sweep) so the spike lands in **this project's** tracker — GitHub,
+GitLab, or a `custom` CLI — per its `tracker:` block in `apexyard.projects.yaml`.
+For a GitHub adopter this runs `gh issue create` exactly as before.
 
 ```bash
-gh issue create --repo {owner/repo} \
-  --title "[Spike] {title}" \
-  --label "spike" \
-  --body "{formatted body}"
+# Resolve the tracker lib (it lives in the ops fork's hooks dir) by walking up
+# from the cwd; source it.
+tracker_lib="$(r="$PWD"; while [ -n "$r" ] && [ "$r" != / ]; do \
+  [ -f "$r/.claude/hooks/_lib-tracker.sh" ] && { echo "$r/.claude/hooks/_lib-tracker.sh"; break; }; \
+  r="${r%/*}"; done)"
+# shellcheck source=/dev/null
+. "$tracker_lib"
+
+# Ensure the `spike` trigger label exists on the target tracker. Best-effort
+# (tracker_label_ensure always exits 0) — a duplicate/missing label never aborts
+# the create. The label is what downstream hooks (AgDR-required hooks, coverage
+# gates) read to apply the spike workflow exemptions.
+tracker_label_ensure "{owner/repo}" "spike" "FBCA04" "Throw-away exploration; exempt from AgDR + coverage gates"
+
+# Pass the body via a file (arbitrary markdown — never inline-interpolated).
+body_file="$(mktemp)"
+cat > "$body_file" <<'BODY'
+{formatted body}
+BODY
+
+# tracker_create <owner/repo> <title> <body_file> [<labels_csv>] → {"ref","url"}.
+# It is gated by require-skill-for-issue-create.sh; the active-issue-skill marker
+# written at skill entry keeps this call allowed.
+result="$(tracker_create "{owner/repo}" "[Spike] {title}" "$body_file" "spike")"
+rc=$?
+rm -f "$body_file"
+if [ "$rc" -eq 3 ]; then
+  # tracker.kind=none (shape-only): no tracker to create in. tracker_create
+  # printed the rendered ticket body to stdout — surface it for manual /
+  # external filing instead of a non-existent CLI/auth failure.
+  echo "Tracker is 'none' (shape-only) — nothing was created in a tracker." >&2
+  echo "File this in your external system (e.g. Jira/Linear via MCP):" >&2
+  printf '%s\n' "$result"
+  exit 0
+elif [ "$rc" -ne 0 ] || [ -z "$result" ]; then
+  echo "Spike creation failed — check the tracker CLI / auth. Nothing was created." >&2
+  exit 1
+fi
+
+ref="$(printf '%s' "$result" | jq -r '.ref')"
+url="$(printf '%s' "$result" | jq -r '.url')"
 ```
 
-The `spike` label is the trigger that downstream hooks (AgDR-required hooks, coverage gates) read to apply the workflow exemptions. If the label doesn't exist on the target repo, the skill will create it via `gh label create spike --color "FBCA04" --description "Throw-away exploration; exempt from AgDR + coverage gates"` (idempotent — `gh label create` errors on duplicate, the skill swallows that).
+The `spike` label is the trigger that downstream hooks (AgDR-required hooks,
+coverage gates) read to apply the workflow exemptions.
 
 ### 8. Return the URL + branch suggestion
 
+Use the `ref` / `url` parsed from `tracker_create` in step 7:
+
 ```
-Created: {owner/repo}#{number} — {title}
-{url}
+Created: {owner/repo}#${ref} — {title}
+${url}
 
 When you start work:
-  /start-ticket {owner/repo}#{number}
-  git checkout -b spike/GH-{number}-{slug}
+  /start-ticket {owner/repo}#${ref}
+  git checkout -b spike/GH-${ref}-{slug}
 ```
 
 ### 9. Remind the operator about the disposition gate

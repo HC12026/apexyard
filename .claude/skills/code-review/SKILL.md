@@ -1,7 +1,7 @@
 ---
 name: code-review
 description: Review a PR for quality, security, and standards compliance. Invokes the Code Reviewer agent (Rex).
-disable-model-invocation: true
+disable-model-invocation: false
 argument-hint: "<pr-number> [repo]"
 allowed-tools: Bash, Read, Grep, Glob
 ---
@@ -36,13 +36,70 @@ See [`.claude/rules/role-triggers.md`](../../rules/role-triggers.md) for the ful
 
 ## Process
 
+Before you draft or post a review, read .claude/rules/writing-standard.md.
+Use the controlled technical writing profile. The review is a durable artifact.
+If the artifact fails the profile, you must request changes.
+State the verdict and next action first. State the reason and evidence after it.
+Use the Code Reviewer agent's required Output Format for first reviews, re-reviews, and reduced-scope reviews.
+Retain its required sections and give each checklist result a reason or evidence reference.
+Before submission, check the report against that format and repair omissions.
+Do not write a process transcript.
+
+### 0. Write the active-reviewer marker (REQUIRED — me2resh/apexyard#843)
+
+Before spawning the Code Reviewer agent (Rex), write the active-reviewer session marker. It records that this review pass is the sanctioned one, and suppresses `warn-review-marker-write.sh`'s advisory warning on Rex's `*-rex.approved` write (that hook warns and never blocks since #1026 — AgDR-0111). At skill entry:
+
+```bash
+ops_root=$(git rev-parse --show-toplevel)
+r="$ops_root"
+while [ -n "$r" ] && [ "$r" != "/" ]; do
+  [ -f "$r/.apexyard-fork" ] && { ops_root="$r"; break; }
+  [ -f "$r/onboarding.yaml" ] && [ -f "$r/apexyard.projects.yaml" ] && { ops_root="$r"; break; }
+  r=$(dirname "$r")
+done
+mkdir -p "$ops_root/.claude/session"
+printf '%s\n' "<owner/repo>#<pr>:rex" > "$ops_root/.claude/session/active-reviewer"
+```
+
+On skill exit (after Rex posts its verdict, whether APPROVED or CHANGES REQUESTED), clear the marker:
+
+```bash
+rm -f "$ops_root/.claude/session/active-reviewer"
+```
+
+Nothing mechanically stops a build-class sub-agent writing the same file; what makes Rex's marker legitimate is that a real, independent review happened. See `.claude/hooks/warn-review-marker-write.sh` and `.claude/rules/pr-workflow.md` § "Build agents cannot self-review".
+
+### 0a. Never hand the reviewer a marker path (me2resh/apexyard#1144)
+
+**The spawn prompt for Rex MUST NOT contain a literal marker path.** Say
+*"write your approval marker on an APPROVED verdict"*; say nothing about where.
+
+Rex already resolves the correct path through `review_marker_path` — the
+repo-qualified `<owner>__<repo>__<pr>-rex.approved` form from AgDR-0060,
+which is the exact path the gates read. A path in the prompt overrides that
+correct resolution: the agent obeys the instruction it was handed, and the
+marker lands at the bare-number `<pr>-rex.approved` instead. **No gate reads
+that path** — there is no bare-number fallback on any on-disk marker lookup.
+
+The failure is silent in the dangerous direction. `ls .claude/session/reviews/`
+shows a file that reads, to a human, like a valid approval; only the merge
+attempt reveals otherwise. And at that moment the obvious repair — moving the
+file into place — is marker forging, the behaviour
+[`pr-workflow.md`](../../rules/pr-workflow.md) § "Build agents cannot
+self-review" exists to prevent. The right recovery is always: delete the
+gate-invisible file and re-run a real review.
+
+`warn-unqualified-review-marker.sh` warns (advisory, never blocks) when a
+bare-number marker appears, and the merge gates name the near-miss in their
+refusal message — but the cheap fix is upstream of both: don't pass a path.
+
 1. Fetch PR details and the latest commit SHA
 2. Get the diff
 3. Review against the checklist (architecture, code quality, testing, security, performance)
 4. Check for the required Glossary section
 5. Check for AgDR links if technical decisions were made
 6. On JS/TS diffs, run the Fallow static-analysis pass (§ 9 of the agent) — changed-scope, fail-soft, advisory; render a `### Fallow Findings` table + dry-run fix preview
-7. Submit a GitHub review via `gh pr review`
+7. Submit the review through the tracker-agnostic `tracker_review_submit` (gh PR / glab MR / custom host — #758), not a hardcoded `gh pr review`, then clear the active-reviewer marker from step 0
 
 ## Review Checklist
 
